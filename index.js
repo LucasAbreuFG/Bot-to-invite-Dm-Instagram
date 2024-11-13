@@ -1,92 +1,48 @@
 const express = require('express');
+const axios = require('axios');
 const bodyParser = require('body-parser');
 require('dotenv').config();
+const { handleIncomingMessage } = require('./handlers/messageHandler');
 
 const app = express();
 app.use(bodyParser.json());
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'my_secure_token_123';
 const PORT = process.env.PORT || 3000;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 
-// Endpoint para verificação do Webhook
+// Configuração do Webhook para verificação
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  // Verifica o token e responde ao desafio
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('Webhook verificado com sucesso!');
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403); // Token inválido
-    }
+  if (mode && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
+  } else {
+    res.status(403).send('Forbidden');
   }
 });
 
-// Endpoint para receber eventos (mensagens, DMs, etc.)
-app.post('/webhook', (req, res) => {
+// Endpoint para receber mensagens
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
-  // Verifica se o evento é do Instagram
   if (body.object === 'instagram') {
-    body.entry.forEach(entry => {
-      // Loop pelos eventos recebidos
-      entry.messaging.forEach(event => {
-        if (event.message) {
-          const senderId = event.sender.id;
-          const messageText = event.message.text;
+    const entry = body.entry[0];
+    const messaging = entry.messaging[0];
+    const senderId = messaging.sender.id;
+    const message = messaging.message.text;
 
-          console.log(`Mensagem recebida de ${senderId}: ${messageText}`);
-
-          // Aqui você pode adicionar respostas automáticas
-          if (messageText.toLowerCase().includes('serviço')) {
-            sendReply(senderId, 'Obrigado pelo interesse! Vamos te enviar mais informações sobre nossos serviços.');
-          }
-        }
-      });
-    });
+    if (message) {
+      await handleIncomingMessage(senderId, message);
+    }
     res.status(200).send('EVENT_RECEIVED');
   } else {
     res.sendStatus(404);
   }
 });
 
-// Função para enviar respostas automáticas
-const sendReply = (recipientId, message) => {
-  const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-  const request = require('request');
-
-  const requestBody = {
-    messaging_type: 'RESPONSE',
-    recipient: {
-      id: recipientId,
-    },
-    message: {
-      text: message,
-    },
-  };
-
-  // Envia uma requisição para a Graph API
-  request(
-    {
-      uri: `https://graph.facebook.com/v17.0/me/messages`,
-      qs: { access_token: PAGE_ACCESS_TOKEN },
-      method: 'POST',
-      json: requestBody,
-    },
-    (err, res, body) => {
-      if (!err) {
-        console.log('Mensagem enviada com sucesso!');
-      } else {
-        console.error('Erro ao enviar mensagem:', err);
-      }
-    }
-  );
-};
-
-// Inicia o servidor
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
